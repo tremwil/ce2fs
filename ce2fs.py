@@ -187,26 +187,54 @@ class Unpacker:
 
 
 class Packer:
-    def __init__(self, fixup_xml: bool = False):
-        self.used_ids: set[int] = set()
+    def __init__(
+        self, 
+        *, 
+        fixup_xml: bool = False, 
+        min_generated_id: int = 100000,
+    ):
+        self.free_id_ranges: list[tuple[int, int]] = []
         self.fixup_xml = fixup_xml
         self.parser: et.XMLParser = et.XMLParser(remove_blank_text=True, encoding="utf-8")
 
-    def collect_ids(self, path: str):
-        self.used_ids = set()
+        self.min_generated_id = min_generated_id
+        self.id_translation_map: dict[int, int] = dict()
+
+    def process_existing_ids(self, path: str):
+        # Find all explicit memrec IDs in the unpacked table
+        used_ids: set[int] = {-1, 2**63}
         for root, _, files in os.walk(path):
             for xml_file in (f for f in files if f.endswith(".xml")):
                 file_root = et.parse(join(root, xml_file), self.parser).getroot()
                 if file_root.tag == "CheatEntry" and (id_tag := file_root.find("ID")) is not None:
                     entry_id = int(id_tag.text)
-                    if entry_id in self.used_ids: 
+                    if entry_id < 0 or entry_id >= 2**63:
+                        raise ValueError(f"Memrec ID {entry_id} is not a non-negative i64")
+                    if entry_id in used_ids: 
                         raise ValueError(f"Duplicate IDs: {entry_id}")
-                    self.used_ids.add(entry_id)
+                    used_ids.add(entry_id)
+        
+        # Create reversed array of free ID ranges
+        desc_ids = sorted(used_ids, reverse=True)
+        self.free_id_ranges = []
+        for i, j in zip(desc_ids[1:], desc_ids):
+            if i + 1 < j: self.free_id_ranges.append((i+1, j))
+        
+        # Trim free ID ranges to the minimum generated ID
+        while (r := self.free_id_ranges[-1])[0] < self.min_generated_id:
+            if r[1] <= self.min_generated_id:
+                self.free_id_ranges.pop()
+            else:
+                self.free_id_ranges[-1] = (self.min_generated_id, r[1])
+                break
+
 
     def get_id(self):
-        while (i := random.randint(0, CT_MAX_ID)) in self.used_ids: pass
-        self.used_ids.add(i)
-        return i
+        while (r := self.free_id_ranges[-1]) and r[0] == r[1]:
+            self.free_id_ranges.pop()
+        
+        self.free_id_ranges[-1] = (r[0] + 1, r[1])
+        return r[0]
     
     def get_or_gen_xml(
         self, 
@@ -250,7 +278,7 @@ class Packer:
     def pack_table(self, path: str, ct_save_path: str | None):
         path = os.path.abspath(path)
 
-        self.collect_ids(path)
+        self.process_existing_ids(path)
         root = self.get_or_gen_xml(join(path, ".xml"), "CheatTable")
 
         if isdir(files := join(path, "Files")):
