@@ -375,7 +375,7 @@ class Packer:
             children_by_id[int(child.find("ID").text)] = child
         
         if (ordering := entry.find(ORDER_TAG)) is None:
-            self.lint_error(path, "missing '{ORDER_TAG}' tag on entry with sub-entries")
+            self.lint_error(join(path, ".xml"), f"missing '{ORDER_TAG}' tag on entry with sub-entries")
             ordering = et.SubElement(entry, ORDER_TAG)
             ordering.extend(et.Element("id", id=str(k)) for k in children_by_id)
 
@@ -472,7 +472,8 @@ if __name__ == '__main__':
         try:
             Unpacker(strip=args.strip).unpack_table(args.input, args.output)
         except Exception as e:
-            parser.error(f"{e}")
+            print(e)
+            sys.exit(1)
     else:
         if args.output is None and not args.fixup and not args.check:
             parser.error(f"Unpacking without providing an output CT file will do nothing unless --fixup or --check is provided")
@@ -480,6 +481,8 @@ if __name__ == '__main__':
         try:
             packer.pack_table(args.input, args.output)
         except Exception as e:
-            parser.error(f"{e}")
+            print(e)
+            sys.exit(1)
         if args.check and packer.num_missing > 0:
-            parser.error(f"check failed, found {packer.num_missing} XML files or tags")
+            print(f"check failed, found {packer.num_missing} XML files or tags")
+            sys.exit(1)
