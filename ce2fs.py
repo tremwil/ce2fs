@@ -368,7 +368,7 @@ class Packer:
             elif fname.endswith(".xml") and not isfile(fpath[:-4] + ".cea"):
                 child = self.get_or_gen_xml(fpath, "CheatEntry", has_id=True)
                 if self.fixup_xml:
-                    elem_to_file(child, fpath)
+                    elem_to_file(child, fpath, "w")
             else:
                 continue
 
@@ -387,7 +387,7 @@ class Packer:
                     script = c
                     entry.remove(c)
                     break
-            elem_to_file(entry, join(path, ".xml"))
+            elem_to_file(entry, join(path, ".xml"), "w")
             if script is not None:
                 entry.insert(i, script)
 
@@ -404,7 +404,7 @@ class Packer:
             xml_path, "CheatEntry", has_id=True, has_sub_entries=has_sub_entries, has_script=True
         )
         if self.fixup_xml and os.path.basename(path) != ".cea":
-            elem_to_file(script, xml_path)
+            elem_to_file(script, xml_path, "w")
 
         if (s := script.find("AssemblerScript")) is None:
             s = et.SubElement(script, "AssemblerScript")
