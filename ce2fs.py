@@ -476,8 +476,8 @@ if __name__ == '__main__':
         except Exception as e:
             parser.error(f"{e}")
     else:
-        if args.output is None and not args.fixup:
-            parser.error(f"Unpacking without providing an output CT file will do nothing unless -f/--fixup is provided")
+        if args.output is None and not args.fixup and not args.check:
+            parser.error(f"Unpacking without providing an output CT file will do nothing unless --fixup or --check is provided")
         packer = Packer(fixup_xml=args.fixup, min_generated_id=args.min_id)
         try:
             packer.pack_table(args.input, args.output)
