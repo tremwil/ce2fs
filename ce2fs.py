@@ -199,6 +199,7 @@ class Packer:
 
         self.min_generated_id = min_generated_id
         self.id_translation_map: dict[int, int] = dict()
+        self.num_missing: int = 0
 
     def process_existing_ids(self, path: str):
         # Find all explicit memrec IDs in the unpacked table
@@ -236,6 +237,10 @@ class Packer:
         self.free_id_ranges[-1] = (r[0] + 1, r[1])
         return r[0]
     
+    def lint_error(self, path: str, msg: str):
+        self.num_missing += 1
+        print(path, ": ", msg, sep="")
+    
     def get_or_gen_xml(
         self, 
         path: str, 
@@ -246,15 +251,24 @@ class Packer:
         has_script: bool = False,
         has_sub_entries: bool = False,
     ) -> et.Element:
-        base: et.Element = (
-            et.parse(path, self.parser).getroot() if isfile(path)
-            else et.Element(expected_tag)
-        )
+        base: et.Element
+        
+        exists = isfile(path)
+        if exists:
+            base = et.parse(path, self.parser).getroot()
+        else:
+            self.lint_error(path, f"file does not exist")
+            base = et.Element(expected_tag)
+
         if base.tag != expected_tag:
             raise ValueError(f"Unexpected tag for XML root element: {base.tag}")
+        
         if has_id and base.find("ID") is None:
+            if exists: self.lint_error(path, "missing 'ID'")
             et.SubElement(base, "ID").text = str(self.get_id())
+        
         if has_description and base.find("Description") is None:
+            if exists: self.lint_error(path, "missing 'Description'")
             head, tail = os.path.split(path)
             et.SubElement(base, "Description").text = (
                 os.path.basename(head) if tail == ".xml" else tail.removesuffix(".xml")
@@ -269,8 +283,10 @@ class Packer:
 
         if base.find("VariableType") is None:
             if has_script:
+                if exists: self.lint_error(path, "missing 'VariableType' for script")
                 et.SubElement(base, "VariableType").text = "Auto Assembler Script"
             elif has_sub_entries and base.find("GroupHeader") is None:
+                if exists: self.lint_error(path, "missing 'GroupHeader' on non-address group")
                 et.SubElement(base, "GroupHeader").text = "1"
     
         return base
@@ -278,6 +294,7 @@ class Packer:
     def pack_table(self, path: str, ct_save_path: str | None):
         path = os.path.abspath(path)
 
+        self.num_missing = 0
         self.process_existing_ids(path)
         root = self.get_or_gen_xml(join(path, ".xml"), "CheatTable")
 
@@ -288,7 +305,7 @@ class Packer:
         if isdir(structs := join(path, "Structures")):
             root.append(self.on_structures(structs))
         
-        if ct_save_path:
+        if ct_save_path is not None:
             elem_to_file(root, ct_save_path, "w", xml_decl=True)
     
     def on_files(self, path: str) -> et.Element:
@@ -358,6 +375,7 @@ class Packer:
             children_by_id[int(child.find("ID").text)] = child
         
         if (ordering := entry.find(ORDER_TAG)) is None:
+            self.lint_error(path, "missing '{ORDER_TAG}' tag on entry with sub-entries")
             ordering = et.SubElement(entry, ORDER_TAG)
             ordering.extend(et.Element("id", id=str(k)) for k in children_by_id)
 
@@ -407,7 +425,7 @@ if __name__ == '__main__':
         "-i", "--input", 
         dest="input",
         required=True,
-        help="input .CT file path (when unpacking) or an unpacked table (CheatEngine) folder (when packing)"
+        help="input .CT file path (when unpacking) or an unpacked table (CheatTable) folder (when packing)"
     )
     parser.add_argument(
         "-o", "--output",
@@ -428,6 +446,21 @@ if __name__ == '__main__':
         default=False,
         help="if true, will generate missing XML files/tags during packing"
     )
+    parser.add_argument(
+        "-c", "--check",
+        dest="check",
+        type=bool,
+        default=False,
+        help="If true, will print info missing XML files or tags to the console and fail if there are any"
+    )
+    parser.add_argument(
+        "--min-id",
+        dest="min_id",
+        type=int,
+        required=False,
+        default=100000,
+        help="minimum ID to assign to cheat entries missing one."
+    )
 
     args = parser.parse_args()
     if not os.path.exists(args.input):
@@ -438,8 +471,17 @@ if __name__ == '__main__':
             parser.error(f"Missing required argument for unpacking: -o/--output")
         if not isdir(args.output):
             parser.error(f"Output path ({args.output}) does not point to a valid directory")
-        Unpacker(strip=args.strip).unpack_table(args.input, args.output)
+        try:
+            Unpacker(strip=args.strip).unpack_table(args.input, args.output)
+        except Exception as e:
+            parser.error(f"{e}")
     else:
         if args.output is None and not args.fixup:
             parser.error(f"Unpacking without providing an output CT file will do nothing unless -f/--fixup is provided")
-        Packer(fixup_xml=args.fixup).pack_table(args.input, args.output)
+        packer = Packer(fixup_xml=args.fixup, min_generated_id=args.min_id)
+        try:
+            packer.pack_table(args.input, args.output)
+        except Exception as e:
+            parser.error(f"{e}")
+        if args.check and packer.num_missing > 0:
+            parser.error(f"check failed, found {packer.num_missing} XML files or tags")
