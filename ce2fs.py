@@ -28,8 +28,8 @@ B85_LOOKUP = bytearray(256)
 for i, c in enumerate(B85_ALPHABET): B85_LOOKUP[c] = i
 
 
-def b85decode(encoded: str) -> bytes:
-    encoded: bytes = encoded.encode()
+def b85decode(blob: str) -> bytes:
+    encoded: bytes = blob.encode()
     decoded = io.BytesIO()
     for i in range(0, len(encoded), 5):
         block = encoded[i:i+5]
@@ -323,7 +323,7 @@ class Packer:
             elif fname.endswith(".xml") and not isfile(fpath[:-4] + ".cea"):
                 child = self.get_or_gen_xml(fpath, "CheatEntry", has_id=True)
                 if self.fixup_xml:
-                    elem_to_file(fpath, child)
+                    elem_to_file(child, fpath)
             else:
                 continue
 
@@ -335,13 +335,13 @@ class Packer:
 
         if self.fixup_xml:
             # Pretty jank but eh
-            script: et.Element | None = None
+            script, i = None, 0
             for i, c in enumerate(entry):
                 if c.tag == "AssemblerScript":
                     script = c
                     entry.remove(c)
                     break
-            elem_to_file(join(path, ".xml"), entry)
+            elem_to_file(entry, join(path, ".xml"))
             if script is not None:
                 entry.insert(i, script)
 
@@ -358,7 +358,7 @@ class Packer:
             xml_path, "CheatEntry", has_id=True, has_sub_entries=has_sub_entries, has_script=True
         )
         if self.fixup_xml and os.path.basename(path) != ".cea":
-            elem_to_file(xml_path, script)
+            elem_to_file(script, xml_path)
 
         if (s := script.find("AssemblerScript")) is None:
             s = et.SubElement(script, "AssemblerScript")
