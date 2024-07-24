@@ -442,15 +442,13 @@ if __name__ == '__main__':
     parser.add_argument(
         "-f", "--fixup",
         dest="fixup",
-        type=bool,
-        default=False,
+        action="store_true",
         help="if true, will generate missing XML files/tags during packing"
     )
     parser.add_argument(
         "-c", "--check",
         dest="check",
-        type=bool,
-        default=False,
+        action="store_true",
         help="If true, will print info missing XML files or tags to the console and fail if there are any"
     )
     parser.add_argument(
