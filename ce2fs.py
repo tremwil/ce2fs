@@ -484,5 +484,5 @@ if __name__ == '__main__':
             print(e)
             sys.exit(1)
         if args.check and packer.num_missing > 0:
-            print(f"check failed, found {packer.num_missing} XML files or tags")
+            print(f"check failed, found {packer.num_missing} missing XML files or tags")
             sys.exit(1)
