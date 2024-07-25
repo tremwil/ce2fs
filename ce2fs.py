@@ -250,10 +250,12 @@ class Packer:
         has_description: bool = False,
         has_script: bool = False,
         has_sub_entries: bool = False,
-    ) -> et.Element:
+        fixup: bool = False
+    ) -> tuple[et.Element, bool]:
         base: et.Element
         
         exists = isfile(path)
+        need_fixup = not exists
         if exists:
             base = et.parse(path, self.parser).getroot()
         else:
@@ -265,11 +267,13 @@ class Packer:
         
         if has_id and base.find("ID") is None:
             if exists: self.lint_error(path, "missing 'ID'")
+            need_fixup = True
             et.SubElement(base, "ID").text = str(self.get_id())
         
         if has_description and base.find("Description") is None:
             if exists: self.lint_error(path, "missing 'Description'")
             head, tail = os.path.split(path)
+            need_fixup = True
             et.SubElement(base, "Description").text = (
                 os.path.basename(head) if tail == ".xml" else tail.removesuffix(".xml")
             )
@@ -279,24 +283,30 @@ class Packer:
             and base.find("GroupHeader") is None
             and base.find("Options") is None
         ):
+            need_fixup = True
             et.SubElement(base, "Options", moHideChildren="1")
 
         if base.find("VariableType") is None:
             if has_script:
                 if exists: self.lint_error(path, "missing 'VariableType' for script")
+                need_fixup = True
                 et.SubElement(base, "VariableType").text = "Auto Assembler Script"
             elif has_sub_entries and base.find("GroupHeader") is None:
                 if exists: self.lint_error(path, "missing 'GroupHeader' on non-address group")
+                need_fixup = True
                 et.SubElement(base, "GroupHeader").text = "1"
     
-        return base
+        if need_fixup and fixup:
+            elem_to_file(base, path, "w")
+
+        return base, need_fixup
 
     def pack_table(self, path: str, ct_save_path: str | None):
         path = os.path.abspath(path)
 
         self.num_missing = 0
         self.process_existing_ids(path)
-        root = self.get_or_gen_xml(join(path, ".xml"), "CheatTable")
+        root, _ = self.get_or_gen_xml(join(path, ".xml"), "CheatTable", fixup=self.fixup_xml)
 
         if isdir(files := join(path, "Files")):
             root.append(self.on_files(files))
@@ -327,10 +337,10 @@ class Packer:
             mstream.write(c.flush(zlib.Z_FINISH))
             compressed = mstream.getvalue()
 
-            file = self.get_or_gen_xml(fpath + ".xml", "File")
+            file, needs_fixup = self.get_or_gen_xml(fpath + ".xml", "File")
             file.set("Encoding", file.get("Encoding") or "Ascii85")
 
-            if self.fixup_xml:
+            if self.fixup_xml and needs_fixup:
                 elem_to_file(file, fpath + ".xml", "w")
 
             file.tag = fname
@@ -347,13 +357,12 @@ class Packer:
         return structs
 
     def on_cheat_entry_folder(self, path: str, isroot: bool = False) -> et.Element:
-        entry: et.Element
-        if isfile(join(path, ".cea")):
-            entry = self.on_cea_file(join(path, ".cea"))
-        else:
-            entry = self.get_or_gen_xml(
+        entry, needs_fixup = (
+            self.on_cea_file(join(path, ".cea")) if isfile(join(path, ".cea"))
+            else self.get_or_gen_xml(
                 join(path, ".xml"), "CheatEntry", has_id=not isroot, has_sub_entries=not isroot
             )
+        )
         
         children_by_id: dict[int, et.Element] = dict()
         for fname in os.listdir(path):
@@ -364,11 +373,9 @@ class Packer:
             elif fname == ".cea" or fname == ".xml":
                 continue
             elif fname.endswith(".cea"):
-                child = self.on_cea_file(fpath)
+                child, _ = self.on_cea_file(fpath, fixup=self.fixup_xml)
             elif fname.endswith(".xml") and not isfile(fpath[:-4] + ".cea"):
-                child = self.get_or_gen_xml(fpath, "CheatEntry", has_id=True)
-                if self.fixup_xml:
-                    elem_to_file(child, fpath, "w")
+                child, _ = self.get_or_gen_xml(fpath, "CheatEntry", has_id=True, fixup=self.fixup_xml)
             else:
                 continue
 
@@ -376,10 +383,11 @@ class Packer:
         
         if (ordering := entry.find(ORDER_TAG)) is None:
             self.lint_error(join(path, ".xml"), f"missing '{ORDER_TAG}' tag on entry with sub-entries")
+            needs_fixup = True
             ordering = et.SubElement(entry, ORDER_TAG)
             ordering.extend(et.Element("id", id=str(k)) for k in children_by_id)
 
-        if self.fixup_xml:
+        if self.fixup_xml and needs_fixup:
             # Pretty jank but eh
             script, i = None, 0
             for i, c in enumerate(entry):
@@ -398,21 +406,18 @@ class Packer:
 
         return entry
 
-    def on_cea_file(self, path: str, has_sub_entries: bool = False) -> et.Element:
+    def on_cea_file(self, path: str, has_sub_entries: bool = False, fixup: bool = False) -> tuple[et.Element, bool]:
         xml_path = path[:-4] + ".xml"
-        script = self.get_or_gen_xml(
-            xml_path, "CheatEntry", has_id=True, has_sub_entries=has_sub_entries, has_script=True
+        script, need_fixup = self.get_or_gen_xml(
+            xml_path, "CheatEntry", has_id=True, has_sub_entries=has_sub_entries, has_script=True, fixup=fixup
         )
-        if self.fixup_xml and os.path.basename(path) != ".cea":
-            elem_to_file(script, xml_path, "w")
-
         if (s := script.find("AssemblerScript")) is None:
             s = et.SubElement(script, "AssemblerScript")
 
         with open(path, "r") as f:
             s.text = f.read()
         
-        return script
+        return script, need_fixup
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(
