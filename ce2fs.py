@@ -61,12 +61,8 @@ def b85encode(blob: bytes) -> str:
 
 
 def elem_to_file(elem: et.Element, path: str, mode: str = "x", xml_decl: bool = False):
-    # We use text mode and manually create the XML decl, because
-    # etree.tostring in binary mode doesn't output system-compliant line breaks
-    with open(path, mode, encoding="utf-8") as f:
-        if xml_decl:
-            f.write('<?xml version="1.0" encoding="utf-8"?>\n')
-        f.write(lxml.etree.tostring(elem, pretty_print=True, encoding=str))
+    with open(path, mode + "b") as f:
+        f.write(lxml.etree.tostring(elem, pretty_print=True, xml_declaration=xml_decl, encoding="utf-8")) # type: ignore
 
 
 def make_valid_filename(s: str):
@@ -192,10 +188,12 @@ class Packer:
         *, 
         fixup_xml: bool = False, 
         min_generated_id: int = 100000,
+        substitution_dict: dict[str, str] | None = None
     ):
         self.free_id_ranges: list[tuple[int, int]] = []
         self.fixup_xml = fixup_xml
         self.parser: et.XMLParser = et.XMLParser(remove_blank_text=True, encoding="utf-8")
+        self.substitutions = substitution_dict or dict()
 
         self.min_generated_id = min_generated_id
         self.id_translation_map: dict[int, int] = dict()
@@ -301,7 +299,7 @@ class Packer:
 
         return base, need_fixup
 
-    def pack_table(self, path: str, ct_save_path: str | None):
+    def pack_table(self, path: str, ct_save_path: str | None) -> et.Element:
         path = os.path.abspath(path)
 
         self.num_missing = 0
@@ -315,8 +313,11 @@ class Packer:
         if isdir(structs := join(path, "Structures")):
             root.append(self.on_structures(structs))
         
+        self.apply_substitutions(root, self.substitutions)
         if ct_save_path is not None:
             elem_to_file(root, ct_save_path, "w", xml_decl=True)
+        
+        return root
     
     def on_files(self, path: str) -> et.Element:
         files = et.Element("Files")
@@ -418,6 +419,20 @@ class Packer:
             s.text = f.read()
         
         return script, need_fixup
+    
+    @classmethod
+    def apply_substitutions(cls, elem: et.Element, subs: dict[str, str], var_pat: re.Pattern[str] | None = None):
+        var_pat = var_pat or re.compile(r'\${CE2FS:(\w+)}')
+        def repl(m: re.Match[str]) -> str:
+            return subs[m.group(1)]
+
+        for key in elem.attrib:
+            elem.attrib[key] = var_pat.sub(repl, elem.attrib[key])
+        
+        elem.text = None if elem.text is None else var_pat.sub(repl, elem.text)
+
+        for child in elem:
+            cls.apply_substitutions(child, subs, var_pat)
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(
@@ -464,6 +479,18 @@ if __name__ == '__main__':
         default=100000,
         help="minimum ID to assign to cheat entries missing one."
     )
+    def check_sub(arg: str) -> tuple[str, str]:
+        if (m := re.match(r"(\w+)=(.*)", arg)) is None:
+            raise ValueError(f"expected key=value pattern, got {arg}")
+        return m.group(1), m.group(2)
+
+    parser.add_argument(
+        dest="subs",
+        metavar="SUBS",
+        type=check_sub,
+        nargs="*",
+        help="when packing, 'key=value' strings which will replace all instances of '{CE2FS:key}' by 'value' in the packed XML"
+    )
 
     args = parser.parse_args()
     if not os.path.exists(args.input):
@@ -482,7 +509,7 @@ if __name__ == '__main__':
     else:
         if args.output is None and not args.fixup and not args.check:
             parser.error(f"Unpacking without providing an output CT file will do nothing unless --fixup or --check is provided")
-        packer = Packer(fixup_xml=args.fixup, min_generated_id=args.min_id)
+        packer = Packer(fixup_xml=args.fixup, min_generated_id=args.min_id, substitution_dict={k: v for k, v in args.subs})
         try:
             packer.pack_table(args.input, args.output)
         except Exception as e:
