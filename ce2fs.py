@@ -61,8 +61,12 @@ def b85encode(blob: bytes) -> str:
 
 
 def elem_to_file(elem: et.Element, path: str, mode: str = "x", xml_decl: bool = False):
-    with open(path, mode + "b") as f:
-        f.write(lxml.etree.tostring(elem, pretty_print=True, xml_declaration=xml_decl, encoding="utf-8")) # type: ignore
+    # We use text mode and manually create the XML decl, because
+    # etree.tostring in binary mode doesn't output system-compliant line breaks
+    with open(path, mode, encoding="utf-8") as f:
+        if xml_decl:
+            f.write('<?xml version="1.0" encoding="utf-8"?>\n')
+        f.write(lxml.etree.tostring(elem, pretty_print=True, encoding=str))
 
 
 def make_valid_filename(s: str):
