@@ -434,7 +434,7 @@ class Packer:
         for child in elem:
             cls.apply_substitutions(child, subs, var_pat)
 
-def command_line(cmdline_args: list[str]):
+def command_line(cmdline_args: list[str] | None = None):
     parser = argparse.ArgumentParser(
         prog="ce2fs",
         description="converts Cheat Engine (.CT) tables to and from file system structures",
@@ -521,4 +521,4 @@ def command_line(cmdline_args: list[str]):
 
 
 if __name__ == '__main__':
-    command_line(sys.argv)
+    command_line()
