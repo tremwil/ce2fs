@@ -434,7 +434,7 @@ class Packer:
         for child in elem:
             cls.apply_substitutions(child, subs, var_pat)
 
-if __name__ == '__main__':
+def command_line(cmdline_args: list[str]):
     parser = argparse.ArgumentParser(
         prog="ce2fs",
         description="converts Cheat Engine (.CT) tables to and from file system structures",
@@ -492,7 +492,7 @@ if __name__ == '__main__':
         help="when packing, 'key=value' strings which will replace all instances of '{CE2FS:key}' by 'value' in the packed XML"
     )
 
-    args = parser.parse_args()
+    args = parser.parse_args(cmdline_args)
     if not os.path.exists(args.input):
         parser.error(f"Input path ({args.input}) does not point to a valid file or folder")
 
@@ -518,3 +518,7 @@ if __name__ == '__main__':
         if args.check and packer.num_missing > 0:
             print(f"check failed, found {packer.num_missing} missing XML files or tags")
             sys.exit(1)
+
+
+if __name__ == '__main__':
+    command_line(sys.argv)
