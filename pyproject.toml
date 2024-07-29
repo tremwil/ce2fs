@@ -1,0 +1,28 @@
+[build-system]
+requires = ["hatchling", "hatch-vcs"]
+build-backend = "hatchling.build"
+
+[project]
+name = "ce2fs"
+dynamic = ["version"]
+authors = [{ name = "William Tremblay", email = "tremwil@gmail.com" }]
+maintainers = [{ name = "William Tremblay", email = "tremwil@gmail.com" }]
+readme = { file = "README.md", content-type = "text/markdown" }
+license = { file = "LICENSE" }
+requires-python = ">= 3.10"
+dependencies = ["lxml >= 5.2.2"]
+keywords = ["Cheat Engine"]
+
+[project.urls]
+Homepage = "https://github.com/tremwil/ce2fs"
+Repository = "https://github.com/tremwil/ce2fs.git"
+Issues = "https://github.com/tremwil/issues"
+
+[project.scripts]
+ce2fs = "ce2fs:cli_main"
+
+[tool.hatch.version]
+source = "vcs"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/ce2fs"]
