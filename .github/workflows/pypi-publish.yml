@@ -12,7 +12,7 @@ jobs:
       id-token: write
     steps:
       - uses: actions/checkout@v4
-      - run: pipx install hatch hatch-vcs
+      - run: pipx install hatch
       
       - name: Build
         run: hatch build
