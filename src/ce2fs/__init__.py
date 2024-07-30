@@ -127,7 +127,7 @@ class Unpacker:
             fname = ""
 
         if (aa := entry.find("AssemblerScript")) is not None:
-            with open(join(path, fname + ".cea"), "x") as f:
+            with open(join(path, fname + ".cea"), "x", encoding="utf-8") as f:
                 f.write(aa.text or "")
             entry.remove(aa)
         
@@ -411,7 +411,7 @@ class Packer:
         if (s := script.find("AssemblerScript")) is None:
             s = et.SubElement(script, "AssemblerScript")
 
-        with open(path, "r") as f:
+        with open(path, "r", encoding="utf-8") as f:
             s.text = f.read()
         
         return script, need_fixup
